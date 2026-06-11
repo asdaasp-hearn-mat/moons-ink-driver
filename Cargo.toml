@@ -1,0 +1,21 @@
+[package]
+name = "moons-ink"
+version = "0.1.0"
+edition = "2024"
+authors = ["Pauline Lynnea  <pau12lyn@outlook.com>"]
+description = "A user-space hardware driver for input and USB peripherals utilizing evdev and rusb"
+repository = "https://github.com/asdaasp-hearn-mat/moons-ink-driver" 
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+keywords = ["driver", "hardware", "evdev", "usb", "linux"]
+categories = ["hardware-support", "os::linux-apis"]
+
+[dependencies]
+evdev = "0.12.1"
+rusb = "0.9.3"
+signal-hook = "0.3.17"
+
+[profile.release]
+strip = true      
+lto = true         
+panic = "abort"    
