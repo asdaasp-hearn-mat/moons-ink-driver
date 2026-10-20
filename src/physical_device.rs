@@ -12,55 +12,67 @@ pub struct PhysicalDevice {
 }
 
 impl PhysicalDevice {
-    pub fn new(vid: u16, pid: u16) -> Self {
-        let device = Self::get_target_device(vid, pid).expect("Error finding device.");
+    pub fn open(vid: u16, pid: u16) -> Result<Self, RusbError> {
+        let device = Self::get_target_device(vid, pid)?;
+        let device_handle = device.open()?;
 
-        PhysicalDevice {
+        let mut physical = PhysicalDevice {
             endpoint_address: 0,
-            device_handle: device.open().expect("Error opening device."),
+            device_handle,
             device,
-        }
+        };
+
+        physical.init()?;
+        physical.set_full_mode()?;
+        Ok(physical)
     }
 
-    pub fn init(&mut self) -> &mut Self {
-        self.device_handle
-            .set_auto_detach_kernel_driver(true)
-            .expect("Error detaching old driver.");
+    #[allow(dead_code)]
+    pub fn new(vid: u16, pid: u16) -> Self {
+        Self::open(vid, pid).expect("Error finding and initializing device.")
+    }
+
+    pub fn init(&mut self) -> Result<(), RusbError> {
+        let _ = self.device_handle.set_auto_detach_kernel_driver(true);
 
         let configurations = Self::get_configurations(&self.device);
         let interface_descriptors = Self::get_hid_interface_descriptors(&configurations);
 
+        let mut found_endpoint = false;
         for interface_descriptor in interface_descriptors {
             self.device_handle
-                .claim_interface(interface_descriptor.interface_number())
-                .expect("Error claiming interface.");
+                .claim_interface(interface_descriptor.interface_number())?;
             for endpoint_descriptor in interface_descriptor.endpoint_descriptors() {
                 if endpoint_descriptor.transfer_type() == TransferType::Interrupt
                     && endpoint_descriptor.max_packet_size() == 64
                 {
                     self.endpoint_address = endpoint_descriptor.address();
+                    found_endpoint = true;
                 }
             }
         }
-        self.reset();
-        self
+
+        if !found_endpoint {
+            return Err(RusbError::NotFound);
+        }
+
+        self.reset()?;
+        Ok(())
     }
 
-    pub fn reset(&mut self) {
-        self.device_handle.reset().expect("Erro reseting device.");
+    pub fn reset(&mut self) -> Result<(), RusbError> {
+        self.device_handle.reset()
     }
 
     pub fn read_device_responses(&self, buffer: &mut [u8]) -> Result<usize, RusbError> {
         self.device_handle
-            .read_interrupt(self.endpoint_address, buffer, Duration::from_secs(3))
+            .read_interrupt(self.endpoint_address, buffer, Duration::from_millis(1000))
     }
 
-    pub fn set_full_mode(&mut self) -> &mut Self {
+    pub fn set_full_mode(&mut self) -> Result<(), RusbError> {
         const REPORTS: [[u8; 8]; 1] = [[0x08, 0x03, 0x00, 0xff, 0xf0, 0x00, 0xff, 0xf0]];
         let reports_as_slices: Vec<&[u8]> = REPORTS.iter().map(|r| &r[..]).collect();
         self.set_report(&reports_as_slices)
-            .expect("Error sending report.");
-        self
     }
 
     pub fn set_report(&mut self, reports: &[&[u8]]) -> Result<(), RusbError> {
@@ -79,8 +91,10 @@ impl PhysicalDevice {
     }
 
     fn is_target_device(vid: u16, pid: u16, device: &Device<GlobalContext>) -> bool {
-        let device_descriptor = device.device_descriptor().unwrap();
-        device_descriptor.vendor_id() == vid && device_descriptor.product_id() == pid
+        match device.device_descriptor() {
+            Ok(desc) => desc.vendor_id() == vid && desc.product_id() == pid,
+            Err(_) => false,
+        }
     }
 
     fn get_target_device(vid: u16, pid: u16) -> Result<Device<GlobalContext>, RusbError> {
@@ -92,9 +106,10 @@ impl PhysicalDevice {
             None => Err(RusbError::NoDevice),
         }
     }
-    fn get_hid_interface_descriptors(
-        config_descriptors: &[ConfigDescriptor],
-    ) -> Vec<InterfaceDescriptor> {
+
+    fn get_hid_interface_descriptors<'a>(
+        config_descriptors: &'a [ConfigDescriptor],
+    ) -> Vec<InterfaceDescriptor<'a>> {
         config_descriptors
             .iter()
             .flat_map(|config_descriptor| config_descriptor.interfaces())
@@ -106,9 +121,11 @@ impl PhysicalDevice {
     }
 
     fn get_configurations(device: &Device<GlobalContext>) -> Vec<ConfigDescriptor> {
-        let device_descriptor = device.device_descriptor().unwrap();
-        (0..device_descriptor.num_configurations())
-            .filter_map(|n| device.config_descriptor(n).ok())
-            .collect()
+        match device.device_descriptor() {
+            Ok(desc) => (0..desc.num_configurations())
+                .filter_map(|n| device.config_descriptor(n).ok())
+                .collect(),
+            Err(_) => Vec::new(),
+        }
     }
 }

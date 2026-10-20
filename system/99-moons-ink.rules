@@ -1,0 +1,6 @@
+# 10moons Graphics Tablet (08f2:6811)
+# Grants permissions to local desktop user and input group for USB access
+SUBSYSTEM=="usb", ATTRS{idVendor}=="08f2", ATTRS{idProduct}=="6811", MODE="0660", GROUP="input", TAG+="uaccess", TAG+="systemd"
+
+# Ensure /dev/uinput accessibility for user-space virtual devices
+KERNEL=="uinput", SUBSYSTEM=="misc", MODE="0660", GROUP="input", TAG+="uaccess", OPTIONS+="static_node=uinput"
