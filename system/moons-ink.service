@@ -1,0 +1,15 @@
+[Unit]
+Description=10moons Graphics Tablet User-Space Driver
+Documentation=https://github.com/asdaasp-hearn-mat/moons-ink-driver
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/moons-ink
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

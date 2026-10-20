@@ -25,40 +25,45 @@ Known quirks:
 #  Features
 
 - Full stylus movement via uinput
-- Pressure sensitivity support (normalized)
+- Pressure sensitivity support (normalized & clamped)
 - Stylus button support
 - Tablet shortcut buttons mapped to keyboard keys
 - Virtual keyboard + virtual pen devices
 - Basic smoothing to reduce jitter
 - Multi-monitor mapping via `xinput`
+- **Background daemon with automatic hotplug & reconnection** (seamless plug & play)
+- **Zero idle CPU overhead** while device is disconnected
+- **systemd and udev integration** (runs automatically in background without manual `sudo`)
 
 ---
 
 # Pressure handling
 
-Pressure normalization is currently implemented heuristically:
+Pressure normalization is implemented with thresholding and range clamping:
 
 ```rust
 fn normalize_pressure(raw_pressure: i32) -> i32 {
     let proximity_threshold = 300;
     let strength_scaling = 3;
 
-    match 1740 - raw_pressure {
-        x if x <= proximity_threshold => 0,
-        x => x * strength_scaling,
+    let diff = 1740 - raw_pressure;
+    if diff <= proximity_threshold {
+        0
+    } else {
+        (diff * strength_scaling).clamp(0, 2048)
     }
 }
-````
+```
 
  Notes:
 
 * Threshold too low may cause false touches
 * Threshold too high may disable touch detection
-* Scaling is experimental and may exceed device range
+* Values are clamped to the 0..=2048 pressure range of the virtual stylus
 
 ---
 
-#Supported Devices
+# Supported Devices
 
 Originally derived from MX002-class tablets, but now primarily tested on:
 
@@ -100,22 +105,72 @@ target/release/moons-ink
 
 #  Usage
 
-Run as root:
+### Option 1: Run as a background systemd service (Recommended - Automatic)
+
+Install the binary, udev rule, and systemd service:
 
 ```bash
-sudo ./moons-ink
+# 1. Build release binary
+cargo build --release
+
+# 2. Install binary
+sudo install -m 755 target/release/moons-ink /usr/local/bin/moons-ink
+
+# 3. Install udev rule and reload
+sudo install -m 644 system/99-moons-ink.rules /etc/udev/rules.d/99-moons-ink.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+
+# 4. Enable and start systemd service
+sudo install -m 644 system/moons-ink.service /etc/systemd/system/moons-ink.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now moons-ink.service
+```
+
+Check service status or logs:
+
+```bash
+systemctl status moons-ink
+journalctl -u moons-ink -f
+```
+
+The driver will automatically detect when the tablet is connected, initialize it, and seamlessly reconnect whenever it is unplugged and plugged back in.
+
+#### Manage the service:
+
+```bash
+# Stop the service
+sudo systemctl stop moons-ink.service
+
+# Restart the service
+sudo systemctl restart moons-ink.service
+
+# Disable from starting automatically on boot
+sudo systemctl disable moons-ink.service
+
+# Uninstall service and files
+sudo systemctl disable --now moons-ink.service
+sudo rm -f /etc/systemd/system/moons-ink.service
+sudo rm -f /etc/udev/rules.d/99-moons-ink.rules
+sudo rm -f /usr/local/bin/moons-ink
+sudo systemctl daemon-reload
+sudo udevadm control --reload-rules
 ```
 
 ---
 
-## Optional: udev rule
+### Option 2: Run directly in terminal
+
+With udev rules installed (allows non-root execution):
 
 ```bash
-echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="08f2", ATTRS{idProduct}=="6811", TAG+="uaccess"' \
-| sudo tee /etc/udev/rules.d/99-moons-ink.rules
+./target/release/moons-ink
+```
 
-sudo udevadm control --reload-rules
-sudo udevadm trigger
+Or run with sudo:
+
+```bash
+sudo ./target/release/moons-ink
 ```
 
 ---
