@@ -237,23 +237,20 @@ fn virtual_pen_builder(pen_emitted_keys: &[Key]) -> Result<VirtualDevice, Error>
             .build()
     }
 
-fn emit_pen_events(&mut self, raw_data: &RawDataReader) {
+    fn emit_pen_events(&mut self, raw_data: &RawDataReader) {
         let raw_pen_buttons = raw_data.pen_buttons();
         self.raw_pen_buttons_to_pen_key_events(raw_pen_buttons);
         self.pen_last_raw_pressed_button = raw_pen_buttons;
-        
-        // --- AÑADE ESTA LÍNEA DE DIAGNÓSTICO ---
-        println!("DEBUG PRESION - Cruda: {}", raw_data.pressure());
-        
+
         let normalized_pressure = Self::normalize_pressure(raw_data.pressure());
         self.pen_emit_touch(raw_data);
-    self.raw_pen_abs_to_pen_abs_events(
-        raw_data.x_axis(),
-        raw_data.y_axis(),
-        normalized_pressure,
-    );
+        self.raw_pen_abs_to_pen_abs_events(
+            raw_data.x_axis(),
+            raw_data.y_axis(),
+            normalized_pressure,
+        );
 
-    self.pen_emit_touch(raw_data);
+        self.pen_emit_touch(raw_data);
     }
 
     fn normalize_pressure(raw_pressure: i32) -> i32 {
